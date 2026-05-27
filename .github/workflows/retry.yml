@@ -1,4 +1,4 @@
-name: Oracle A1 Batam Auto-Retry
+name: Oracle A1 Batam Retry
 
 on:
   schedule:
