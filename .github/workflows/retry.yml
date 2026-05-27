@@ -1,0 +1,126 @@
+name: Oracle A1 Batam Auto-Retry
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # tiap 5 menit (minimum GitHub)
+  workflow_dispatch:          # tombol manual di tab Actions
+
+jobs:
+  try-create-instance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache OCI CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: ${{ runner.os }}-oci-cli-v1
+
+      - name: Setup OCI CLI
+        run: |
+          pip install oci-cli --quiet
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+          mkdir -p ~/.oci ~/.ssh
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          key_file=~/.oci/oci_api_key.pem
+          region=ap-batam-1
+          EOF
+
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
+
+      - name: Cek instance A1 sudah ada
+        id: check
+        run: |
+          EXISTING=$(oci compute instance list \
+            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+            --lifecycle-state RUNNING \
+            --auth api_key \
+            --no-retry 2>&1 || true)
+          if echo "$EXISTING" | grep -q "A1.Flex"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Coba buat instance A1
+        id: launch
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          STRATEGIES=(
+            '4cpu-auto:{"ocpus":4,"memoryInGBs":24}:'
+            '4cpu-fd1:{"ocpus":4,"memoryInGBs":24}:FAULT-DOMAIN-1'
+            '4cpu-fd2:{"ocpus":4,"memoryInGBs":24}:FAULT-DOMAIN-2'
+            '4cpu-fd3:{"ocpus":4,"memoryInGBs":24}:FAULT-DOMAIN-3'
+            '1cpu-auto:{"ocpus":1,"memoryInGBs":6}:'
+          )
+
+          SUCCESS=false
+          for STRATEGY in "${STRATEGIES[@]}"; do
+            LABEL=$(echo "$STRATEGY" | cut -d: -f1)
+            SHAPE_CFG=$(echo "$STRATEGY" | cut -d: -f2)
+            FD=$(echo "$STRATEGY" | cut -d: -f3)
+            NAME="batam-gh-$(date +%m%d%H%M%S)-$RANDOM"
+
+            echo "Mencoba $LABEL → $NAME"
+
+            ARGS="compute instance launch \
+              --availability-domain GsbX:AP-BATAM-1-AD-1 \
+              --compartment-id ${{ secrets.OCI_TENANCY_OCID }} \
+              --shape VM.Standard.A1.Flex \
+              --shape-config '$SHAPE_CFG' \
+              --image-id ocid1.image.oc1.ap-batam-1.aaaaaaaansnq2iiriekoejkn2ktdnl5s553mj3yrqgnib3z77suae3v6ypfq \
+              --subnet-id ocid1.subnet.oc1.ap-batam-1.aaaaaaaajpdq76idwvc77ciys7go33rpm2ulqdmwsk2v5c66oc2kw45pllva \
+              --assign-public-ip true \
+              --ssh-authorized-keys-file ~/.ssh/id_rsa.pub \
+              --display-name $NAME \
+              --auth api_key \
+              --no-retry"
+
+            if [ -n "$FD" ]; then
+              ARGS="$ARGS --fault-domain $FD"
+            fi
+
+            RESULT=$(oci $ARGS 2>&1 || true)
+
+            if echo "$RESULT" | grep -q "PROVISIONING\|lifecycle-state"; then
+              echo "BERHASIL dengan $LABEL!"
+              echo "success=true" >> $GITHUB_OUTPUT
+              echo "label=$LABEL" >> $GITHUB_OUTPUT
+              echo "name=$NAME" >> $GITHUB_OUTPUT
+              SUCCESS=true
+              break
+            elif echo "$RESULT" | grep -q "LimitExceeded"; then
+              echo "LimitExceeded — instance sudah ada, stop."
+              echo "success=limit" >> $GITHUB_OUTPUT
+              SUCCESS=true
+              break
+            else
+              echo "Kapasitas penuh ($LABEL), lanjut..."
+            fi
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Kirim notifikasi Telegram (berhasil)
+        if: steps.launch.outputs.success == 'true'
+        run: |
+          MSG="Oracle A1 Batam BERHASIL!%0AInstance: ${{ steps.launch.outputs.name }}%0AShape: ${{ steps.launch.outputs.label }}%0AWaktu: $(date '+%Y-%m-%d %H:%M UTC')"
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$MSG"
+
+      - name: Nonaktifkan workflow setelah berhasil
+        if: steps.launch.outputs.success == 'true'
+        run: |
+          curl -s -X PUT \
+            -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/retry.yml/disable"
