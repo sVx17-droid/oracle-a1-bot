@@ -126,3 +126,13 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/retry.yml/disable"
+
+      - name: Self-trigger run berikutnya (jika belum berhasil)
+        if: steps.launch.outputs.success != 'true' && steps.launch.outputs.success != 'limit'
+        run: |
+          sleep 300
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/retry.yml/dispatches" \
+            -d '{"ref":"master"}'
