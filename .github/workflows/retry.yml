@@ -75,7 +75,14 @@ jobs:
             '4cpu-fd1:{"ocpus":4,"memoryInGBs":24}:FAULT-DOMAIN-1'
             '4cpu-fd2:{"ocpus":4,"memoryInGBs":24}:FAULT-DOMAIN-2'
             '4cpu-fd3:{"ocpus":4,"memoryInGBs":24}:FAULT-DOMAIN-3'
+            '2cpu-auto:{"ocpus":2,"memoryInGBs":12}:'
+            '2cpu-fd1:{"ocpus":2,"memoryInGBs":12}:FAULT-DOMAIN-1'
+            '2cpu-fd2:{"ocpus":2,"memoryInGBs":12}:FAULT-DOMAIN-2'
+            '2cpu-fd3:{"ocpus":2,"memoryInGBs":12}:FAULT-DOMAIN-3'
             '1cpu-auto:{"ocpus":1,"memoryInGBs":6}:'
+            '1cpu-fd1:{"ocpus":1,"memoryInGBs":6}:FAULT-DOMAIN-1'
+            '1cpu-fd2:{"ocpus":1,"memoryInGBs":6}:FAULT-DOMAIN-2'
+            '1cpu-fd3:{"ocpus":1,"memoryInGBs":6}:FAULT-DOMAIN-3'
           )
 
           SUCCESS=false
