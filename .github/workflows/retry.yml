@@ -127,9 +127,13 @@ jobs:
               echo "success=limit" >> $GITHUB_OUTPUT
               SUCCESS=true
               break
+            elif echo "$RESULT" | grep -qi "TooManyRequests\|Too many requests"; then
+              echo "Rate-limited oleh Oracle — berhenti, tunggu run berikutnya."
+              break
             else
               ERR=$(echo "$RESULT" | grep -oE '"message": "[^"]*"' | head -1 || echo "(no message)")
               echo "Gagal ($LABEL): $ERR"
+              sleep 4
             fi
           done
 
