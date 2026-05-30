@@ -155,9 +155,13 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/retry.yml/disable"
 
       - name: Kirim notifikasi masih penuh (1x per jam)
-        # Kirim tiap 4 run (~1 jam) bukan tiap run — hindari spam Telegram
-        if: steps.launch.outputs.success == 'false' && fromJSON(github.run_number) % 4 == 0
+        if: steps.launch.outputs.success == 'false'
         run: |
-          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=⏳ A1 Batam masih penuh (run #${{ github.run_number }}). Waktu: $(date '+%Y-%m-%d %H:%M UTC'). Bot aktif retry tiap 15 menit."
+          # Kirim hanya tiap 4 run (~1 jam) agar tidak spam Telegram
+          if (( ${{ github.run_number }} % 4 == 0 )); then
+            curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+              -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+              --data-urlencode "text=⏳ A1 Batam masih penuh (run #${{ github.run_number }}). Waktu: $(date '+%Y-%m-%d %H:%M UTC'). Bot aktif retry tiap 15 menit."
+          else
+            echo "Run #${{ github.run_number }} — skip notif (kirim tiap 4 run / ~1 jam)"
+          fi
