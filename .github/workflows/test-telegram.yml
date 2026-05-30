@@ -9,6 +9,6 @@ jobs:
     steps:
       - name: Kirim pesan test
         run: |
-          MSG="✅ Oracle A1 Bot AKTIF%0AWaktu: $(date '+%Y-%m-%d %H:%M UTC')%0AStatus: Workflow berjalan normal, sedang retry tiap 5 menit."
+          MSG="✅ Oracle A1 Bot AKTIF%0AWaktu: $(date '+%Y-%m-%d %H:%M UTC')%0AStatus: Workflow berjalan normal, sedang retry tiap 15 menit."
           curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$MSG"
