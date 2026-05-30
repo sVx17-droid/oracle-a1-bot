@@ -61,9 +61,9 @@ jobs:
       - name: Instance sudah ada — nonaktifkan workflow
         if: steps.check.outputs.exists == 'true'
         run: |
-          MSG="✅ Oracle A1 Batam sudah RUNNING!%0AWorkflow dihentikan otomatis.%0AWaktu: $(date '+%Y-%m-%d %H:%M UTC')"
           curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$MSG"
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=✅ Oracle A1 Batam sudah RUNNING! Workflow dihentikan otomatis. Waktu: $(date '+%Y-%m-%d %H:%M UTC')"
           curl -s -X PUT \
             -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
             -H "Accept: application/vnd.github+json" \
@@ -73,15 +73,13 @@ jobs:
         id: launch
         if: steps.check.outputs.exists == 'false'
         run: |
-          # Parallel arrays — hindari cut -d: yang memotong JSON
-          LABELS=("4cpu-auto" "4cpu-fd1" "4cpu-fd2" "4cpu-fd3"
-                  "2cpu-auto" "2cpu-fd1" "2cpu-fd2" "2cpu-fd3"
-                  "1cpu-auto" "1cpu-fd1" "1cpu-fd2" "1cpu-fd3")
-          OCPUS=(4  4  4  4  2  2  2  2  1  1  1  1)
-          MEMS=(24 24 24 24 12 12 12 12  6  6  6  6)
-          FDS=(""             "FAULT-DOMAIN-1" "FAULT-DOMAIN-2" "FAULT-DOMAIN-3"
-               ""             "FAULT-DOMAIN-1" "FAULT-DOMAIN-2" "FAULT-DOMAIN-3"
-               ""             "FAULT-DOMAIN-1" "FAULT-DOMAIN-2" "FAULT-DOMAIN-3")
+          # 5 strategi optimal: 4cpu semua FD (prioritas) + 2cpu-auto (fallback)
+          # Urutan: auto dulu (biar Oracle pilih FD terbaik), lalu eksplisit per FD
+          # 1cpu tidak dimasukkan — tidak bisa resize ke 4cpu tanpa delete ulang
+          LABELS=("4cpu-auto" "4cpu-fd1" "4cpu-fd2" "4cpu-fd3" "2cpu-auto")
+          OCPUS=(4            4          4          4          2)
+          MEMS=(24            24         24         24         12)
+          FDS=(""             "FAULT-DOMAIN-1" "FAULT-DOMAIN-2" "FAULT-DOMAIN-3" "")
 
           SUCCESS=false
           for i in "${!LABELS[@]}"; do
@@ -91,9 +89,8 @@ jobs:
             FD="${FDS[$i]}"
             NAME="batam-gh-$(date +%m%d%H%M)-$$"
 
-            echo "Mencoba $LABEL (${OCPU} OCPU, ${MEM}GB) → $NAME"
+            echo "[$((i+1))/5] Mencoba $LABEL (${OCPU} OCPU, ${MEM}GB) → $NAME"
 
-            # Gunakan bash array agar quoting JSON aman (tidak pakai string + eval)
             OCI_ARGS=(
               compute instance launch
               --availability-domain "GsbX:AP-BATAM-1-AD-1"
@@ -116,7 +113,7 @@ jobs:
             RESULT=$(oci "${OCI_ARGS[@]}" 2>&1 || true)
 
             if echo "$RESULT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
-              echo "BERHASIL dengan $LABEL!"
+              echo "✅ BERHASIL dengan $LABEL!"
               echo "success=true" >> $GITHUB_OUTPUT
               echo "label=$LABEL" >> $GITHUB_OUTPUT
               echo "name=$NAME" >> $GITHUB_OUTPUT
@@ -128,12 +125,13 @@ jobs:
               SUCCESS=true
               break
             elif echo "$RESULT" | grep -qi "TooManyRequests\|Too many requests"; then
-              echo "Rate-limited oleh Oracle — berhenti, tunggu run berikutnya."
+              echo "⚠️ Rate-limited Oracle — berhenti, tunggu run berikutnya."
               break
             else
               ERR=$(echo "$RESULT" | grep -oE '"message": "[^"]*"' | head -1 || echo "(no message)")
               echo "Gagal ($LABEL): $ERR"
-              sleep 4
+              # Jeda 10s agar lolos rate-limit Oracle sebelum strategi berikutnya
+              if [ $i -lt 4 ]; then sleep 10; fi
             fi
           done
 
@@ -144,9 +142,9 @@ jobs:
       - name: Kirim notifikasi Telegram (berhasil)
         if: steps.launch.outputs.success == 'true'
         run: |
-          MSG="🎉 Oracle A1 Batam BERHASIL!%0AInstance: ${{ steps.launch.outputs.name }}%0AShape: ${{ steps.launch.outputs.label }}%0AWaktu: $(date '+%Y-%m-%d %H:%M UTC')"
           curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$MSG"
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=🎉 Oracle A1 Batam BERHASIL! Instance: ${{ steps.launch.outputs.name }} | Shape: ${{ steps.launch.outputs.label }} | Waktu: $(date '+%Y-%m-%d %H:%M UTC')"
 
       - name: Nonaktifkan workflow setelah berhasil
         if: steps.launch.outputs.success == 'true' || steps.launch.outputs.success == 'limit'
@@ -156,9 +154,10 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/retry.yml/disable"
 
-      - name: Kirim notifikasi semua strategi gagal
-        if: steps.launch.outputs.success == 'false'
+      - name: Kirim notifikasi masih penuh (1x per jam)
+        # Kirim tiap 4 run (~1 jam) bukan tiap run — hindari spam Telegram
+        if: steps.launch.outputs.success == 'false' && fromJSON(github.run_number) % 4 == 0
         run: |
           curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=⏳ A1 Batam masih penuh — semua 12 strategi gagal. Waktu: $(date '+%Y-%m-%d %H:%M UTC'). Bot tetap retry tiap 15 menit."
+            --data-urlencode "text=⏳ A1 Batam masih penuh (run #${{ github.run_number }}). Waktu: $(date '+%Y-%m-%d %H:%M UTC'). Bot aktif retry tiap 15 menit."
