@@ -130,8 +130,8 @@ jobs:
             else
               ERR=$(echo "$RESULT" | grep -oE '"message": "[^"]*"' | head -1 || echo "(no message)")
               echo "Gagal ($LABEL): $ERR"
-              # Jeda 10s agar lolos rate-limit Oracle sebelum strategi berikutnya
-              if [ $i -lt 4 ]; then sleep 10; fi
+              # Jeda 30s agar lolos rate-limit Oracle sebelum strategi berikutnya
+              if [ $i -lt 4 ]; then sleep 30; fi
             fi
           done
 
