@@ -2,7 +2,7 @@ name: Oracle A1 Batam Retry
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # tiap 5 menit (minimum GitHub)
+    - cron: '*/15 * * * *'  # tiap 15 menit
   workflow_dispatch:
 
 concurrency:
