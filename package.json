@@ -1,0 +1,18 @@
+{
+  "name": "super-monitor",
+  "version": "1.0.0",
+  "description": "Super Monitoring Bandarmotologi - Multi-Exchange Whale Detection System",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "backtest": "node src/backtest-bandar.mjs",
+    "setup": "node src/setup-pairs.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "ws": "^8.18.0",
+    "node-cron": "^3.0.3"
+  }
+}
